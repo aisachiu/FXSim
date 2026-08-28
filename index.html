@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FX Sim — Currency Trading Simulator</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="#" class="logo" data-nav="landing">FX Sim</a>
+      <nav class="header-nav" id="header-nav"></nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Landing -->
+    <section id="view-landing" class="view">
+      <div class="hero">
+        <h1>Simulate currency trading</h1>
+        <p class="lead">
+          Start with Hong Kong dollars, trade into major currencies at live exchange rates,
+          and track whether your paper portfolio grows or shrinks over time.
+        </p>
+        <div class="hero-actions">
+          <button class="btn btn-primary" data-nav="signup">Create account</button>
+          <button class="btn btn-secondary" data-nav="login">Log in</button>
+        </div>
+        <p class="note">All data stays in your browser. Export a JSON backup anytime.</p>
+      </div>
+    </section>
+
+    <!-- Sign up -->
+    <section id="view-signup" class="view hidden">
+      <div class="card auth-card">
+        <h2>Create account</h2>
+        <form id="signup-form">
+          <label>
+            Name
+            <input type="text" name="name" autocomplete="name" required>
+          </label>
+          <label>
+            Email
+            <input type="email" name="email" autocomplete="email" required>
+          </label>
+          <label>
+            Password
+            <input type="password" name="password" autocomplete="new-password" minlength="6" required>
+          </label>
+          <label>
+            Starting balance (HKD)
+            <input type="number" name="startingHkd" min="1000" step="0.01" value="10000" required>
+          </label>
+          <p class="form-error hidden" id="signup-error"></p>
+          <button type="submit" class="btn btn-primary btn-block">Create account</button>
+        </form>
+        <p class="auth-switch">Already have an account? <a href="#" data-nav="login">Log in</a></p>
+      </div>
+    </section>
+
+    <!-- Log in -->
+    <section id="view-login" class="view hidden">
+      <div class="card auth-card">
+        <h2>Log in</h2>
+        <form id="login-form">
+          <label>
+            Email
+            <input type="email" name="email" autocomplete="email" required>
+          </label>
+          <label>
+            Password
+            <input type="password" name="password" autocomplete="current-password" required>
+          </label>
+          <p class="form-error hidden" id="login-error"></p>
+          <button type="submit" class="btn btn-primary btn-block">Log in</button>
+        </form>
+        <p class="auth-switch">No account yet? <a href="#" data-nav="signup">Sign up</a></p>
+      </div>
+    </section>
+
+    <!-- Dashboard -->
+    <section id="view-dashboard" class="view hidden">
+      <div class="dashboard-header">
+        <div>
+          <h2 id="dashboard-greeting">Portfolio</h2>
+          <p class="muted" id="rates-updated">Rates loading…</p>
+        </div>
+        <div class="dashboard-actions">
+          <button class="btn btn-secondary btn-sm" id="btn-refresh-rates">Refresh rates</button>
+          <button class="btn btn-secondary btn-sm" id="btn-export">Export JSON</button>
+          <label class="btn btn-secondary btn-sm file-btn">
+            Import JSON
+            <input type="file" id="import-file" accept="application/json,.json" hidden>
+          </label>
+          <button class="btn btn-ghost btn-sm" id="btn-logout">Log out</button>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card summary-card">
+          <p class="label">Total wealth (HKD)</p>
+          <p class="big-number" id="total-wealth">—</p>
+          <p class="pnl" id="pnl">—</p>
+        </div>
+        <div class="card summary-card">
+          <p class="label">Starting deposit</p>
+          <p class="big-number secondary" id="starting-hkd">—</p>
+          <p class="muted" id="trade-count">0 trades</p>
+        </div>
+      </div>
+
+      <div class="grid-2-wide">
+        <div class="card">
+          <h3>Trade</h3>
+          <form id="trade-form">
+            <div class="form-row">
+              <label>
+                From
+                <select name="fromCurrency" id="trade-from"></select>
+              </label>
+              <label>
+                To
+                <select name="toCurrency" id="trade-to"></select>
+              </label>
+            </div>
+            <label>
+              Amount (<span id="trade-from-label">HKD</span>)
+              <input type="number" name="amount" min="0.01" step="0.01" required>
+            </label>
+            <p class="trade-preview muted" id="trade-preview">Enter an amount to preview conversion.</p>
+            <p class="form-error hidden" id="trade-error"></p>
+            <button type="submit" class="btn btn-primary">Convert</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>Holdings</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Currency</th>
+                  <th>Amount</th>
+                  <th>Value (HKD)</th>
+                  <th>Weight</th>
+                </tr>
+              </thead>
+              <tbody id="holdings-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Wealth over time (HKD)</h3>
+        <div class="chart-wrap">
+          <canvas id="wealth-chart"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Recent trades</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>From</th>
+                <th>To</th>
+                <th>Rate</th>
+              </tr>
+            </thead>
+            <tbody id="transactions-body"></tbody>
+          </table>
+        </div>
+        <p class="muted empty-msg hidden" id="no-trades">No trades yet.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>Rates from <a href="https://frankfurter.dev" target="_blank" rel="noopener">Frankfurter</a>. Paper trading only — no real money.</p>
+    </div>
+  </footer>
+</body>
+</html>
