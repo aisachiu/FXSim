@@ -93,36 +93,33 @@ main {
   display: none;
 }
 
-.hero {
-  text-align: center;
-  padding: 3rem 0 2rem;
-  max-width: 640px;
-  margin: 0 auto;
+.setup-card {
+  max-width: 420px;
+  margin: 2rem auto;
 }
 
-.hero h1 {
-  font-size: clamp(1.75rem, 4vw, 2.5rem);
+.setup-card h1 {
+  font-size: clamp(1.75rem, 4vw, 2rem);
   letter-spacing: -0.03em;
-  margin: 0 0 1rem;
+  margin: 0 0 0.75rem;
+}
+
+.setup-note {
+  margin: 1.25rem 0 0;
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.link-btn {
+  color: var(--primary);
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 .lead {
   font-size: 1.125rem;
   color: var(--muted);
   margin: 0 0 2rem;
-}
-
-.hero-actions {
-  display: flex;
-  gap: 0.75rem;
-  justify-content: center;
-  flex-wrap: wrap;
-}
-
-.note {
-  margin-top: 2rem;
-  font-size: 0.875rem;
-  color: var(--muted);
 }
 
 .card {
@@ -133,22 +130,9 @@ main {
   box-shadow: var(--shadow);
 }
 
-.auth-card {
-  max-width: 420px;
-  margin: 2rem auto;
-}
-
-.auth-card h2,
 .view h2 {
   margin: 0 0 1.25rem;
   letter-spacing: -0.02em;
-}
-
-.auth-switch {
-  margin: 1.25rem 0 0;
-  font-size: 0.875rem;
-  color: var(--muted);
-  text-align: center;
 }
 
 label {

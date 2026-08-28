@@ -1,21 +1,7 @@
 import { EXPORT_FORMAT, EXPORT_VERSION, STORAGE_KEYS } from './constants.js';
 
-function readAccounts() {
-  const raw = localStorage.getItem(STORAGE_KEYS.accounts);
-  if (!raw) return {};
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
-
-function writeAccounts(accounts) {
-  localStorage.setItem(STORAGE_KEYS.accounts, JSON.stringify(accounts));
-}
-
-export function getSession() {
-  const raw = localStorage.getItem(STORAGE_KEYS.session);
+export function getPortfolio() {
+  const raw = localStorage.getItem(STORAGE_KEYS.portfolio);
   if (!raw) return null;
   try {
     return JSON.parse(raw);
@@ -24,27 +10,12 @@ export function getSession() {
   }
 }
 
-export function setSession(email) {
-  localStorage.setItem(STORAGE_KEYS.session, JSON.stringify({ email }));
+export function savePortfolio(portfolio) {
+  localStorage.setItem(STORAGE_KEYS.portfolio, JSON.stringify(portfolio));
 }
 
-export function clearSession() {
-  localStorage.removeItem(STORAGE_KEYS.session);
-}
-
-export function getAccount(email) {
-  const accounts = readAccounts();
-  return accounts[email.toLowerCase()] ?? null;
-}
-
-export function saveAccount(email, account) {
-  const accounts = readAccounts();
-  accounts[email.toLowerCase()] = account;
-  writeAccounts(accounts);
-}
-
-export function accountExists(email) {
-  return Boolean(getAccount(email));
+export function clearPortfolio() {
+  localStorage.removeItem(STORAGE_KEYS.portfolio);
 }
 
 export function createEmptyPortfolio(startingHkd) {
@@ -56,53 +27,60 @@ export function createEmptyPortfolio(startingHkd) {
   };
 }
 
-export function exportAccount(email) {
-  const account = getAccount(email);
-  if (!account) {
-    throw new Error('No account found to export.');
+function extractPortfolio(payload) {
+  if (payload.portfolio) {
+    return payload.portfolio;
+  }
+
+  // v1 exports wrapped portfolio inside account
+  if (payload.account?.portfolio) {
+    return payload.account.portfolio;
+  }
+
+  return null;
+}
+
+function validatePortfolio(portfolio) {
+  if (
+    !portfolio ||
+    typeof portfolio.startingHkd !== 'number' ||
+    !portfolio.balances ||
+    typeof portfolio.balances !== 'object'
+  ) {
+    throw new Error('Export file is missing a valid portfolio.');
+  }
+
+  if (!Array.isArray(portfolio.transactions)) {
+    portfolio.transactions = [];
+  }
+
+  if (!Array.isArray(portfolio.snapshots)) {
+    portfolio.snapshots = [];
+  }
+
+  return portfolio;
+}
+
+export function exportPortfolio() {
+  const portfolio = getPortfolio();
+  if (!portfolio) {
+    throw new Error('No portfolio to export.');
   }
 
   return {
     format: EXPORT_FORMAT,
     version: EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
-    account: {
-      email: email.toLowerCase(),
-      name: account.name,
-      passwordHash: account.passwordHash,
-      passwordSalt: account.passwordSalt,
-      portfolio: account.portfolio,
-    },
+    portfolio,
   };
 }
 
-export function importAccount(payload, { replace = false } = {}) {
+export function importPortfolio(payload) {
   if (!payload || payload.format !== EXPORT_FORMAT) {
     throw new Error('Invalid export file. Expected an FX Sim JSON backup.');
   }
 
-  if (!payload.account?.email || !payload.account?.portfolio) {
-    throw new Error('Export file is missing required account data.');
-  }
-
-  const email = payload.account.email.toLowerCase();
-  const exists = accountExists(email);
-
-  if (exists && !replace) {
-    throw new Error(`Account ${email} already exists. Choose replace to overwrite.`);
-  }
-
-  const account = {
-    name: payload.account.name ?? '',
-    passwordHash: payload.account.passwordHash,
-    passwordSalt: payload.account.passwordSalt,
-    portfolio: payload.account.portfolio,
-  };
-
-  if (!account.passwordHash || !account.passwordSalt) {
-    throw new Error('Export file is missing credential data.');
-  }
-
-  saveAccount(email, account);
-  return email;
+  const portfolio = validatePortfolio(extractPortfolio(payload));
+  savePortfolio(portfolio);
+  return portfolio;
 }

@@ -1,5 +1,9 @@
-import { CURRENCIES, DEFAULT_CURRENCY, MIN_STARTING_HKD } from './constants.js';
-import { hashPassword, verifyPassword } from './crypto.js';
+import {
+  CURRENCIES,
+  DEFAULT_CURRENCY,
+  DEFAULT_STARTING_HKD,
+  MIN_STARTING_HKD,
+} from './constants.js';
 import {
   executeTrade,
   getPortfolioView,
@@ -8,29 +12,23 @@ import {
 } from './portfolio.js';
 import { getCrossRate, refreshRates } from './rates.js';
 import {
-  accountExists,
-  clearSession,
+  clearPortfolio,
   createEmptyPortfolio,
-  exportAccount,
-  getAccount,
-  getSession,
-  importAccount,
-  saveAccount,
-  setSession,
+  exportPortfolio,
+  getPortfolio,
+  importPortfolio,
+  savePortfolio,
 } from './storage.js';
 
 const views = {
-  landing: document.getElementById('view-landing'),
-  signup: document.getElementById('view-signup'),
-  login: document.getElementById('view-login'),
+  setup: document.getElementById('view-setup'),
   dashboard: document.getElementById('view-dashboard'),
 };
 
-const headerNav = document.getElementById('header-nav');
-const signupForm = document.getElementById('signup-form');
-const loginForm = document.getElementById('login-form');
+const setupForm = document.getElementById('setup-form');
 const tradeForm = document.getElementById('trade-form');
 const importFile = document.getElementById('import-file');
+const setupImportFile = document.getElementById('setup-import-file');
 
 let wealthChart = null;
 let previewTimer = null;
@@ -61,30 +59,6 @@ function showView(name) {
   Object.entries(views).forEach(([key, element]) => {
     element.classList.toggle('hidden', key !== name);
   });
-  renderHeader(name);
-}
-
-function renderHeader(activeView) {
-  const session = getSession();
-  headerNav.innerHTML = '';
-
-  if (session && activeView === 'dashboard') {
-    return;
-  }
-
-  if (session) {
-    const dash = document.createElement('button');
-    dash.className = 'btn btn-secondary btn-sm';
-    dash.textContent = 'Dashboard';
-    dash.dataset.nav = 'dashboard';
-    headerNav.appendChild(dash);
-  } else if (activeView !== 'signup' && activeView !== 'login') {
-    const signup = document.createElement('button');
-    signup.className = 'btn btn-primary btn-sm';
-    signup.textContent = 'Sign up';
-    signup.dataset.nav = 'signup';
-    headerNav.appendChild(signup);
-  }
 }
 
 function showError(elementId, message) {
@@ -214,21 +188,18 @@ function renderChart(snapshots, startingHkd) {
 }
 
 async function renderDashboard() {
-  const session = getSession();
-  if (!session) {
-    showView('login');
+  if (!getPortfolio()) {
+    showView('setup');
     return;
   }
 
   showView('dashboard');
 
   try {
-    await snapshotOnRefresh(session.email);
-    const data = await getPortfolioView(session.email);
+    await snapshotOnRefresh();
+    const data = await getPortfolioView();
     const { portfolio, valuation, pnl, pnlPct } = data;
 
-    document.getElementById('dashboard-greeting').textContent =
-      data.name ? `${data.name}'s portfolio` : 'Your portfolio';
     document.getElementById('rates-updated').textContent =
       `Rates as of ${data.ratesDate ?? 'today'} · updated just now`;
 
@@ -280,92 +251,32 @@ async function previewTrade() {
   }
 }
 
-async function handleSignup(event) {
+async function handleSetup(event) {
   event.preventDefault();
-  showError('signup-error', '');
+  showError('setup-error', '');
 
-  const form = new FormData(signupForm);
-  const name = String(form.get('name')).trim();
-  const email = String(form.get('email')).trim().toLowerCase();
-  const password = String(form.get('password'));
+  const form = new FormData(setupForm);
   const startingHkd = Number(form.get('startingHkd'));
 
-  if (!email || !password) {
-    showError('signup-error', 'Email and password are required.');
-    return;
-  }
-
-  if (password.length < 6) {
-    showError('signup-error', 'Password must be at least 6 characters.');
-    return;
-  }
-
   if (!Number.isFinite(startingHkd) || startingHkd < MIN_STARTING_HKD) {
-    showError('signup-error', `Starting balance must be at least ${MIN_STARTING_HKD} HKD.`);
-    return;
-  }
-
-  if (accountExists(email)) {
-    showError('signup-error', 'An account with this email already exists.');
+    showError('setup-error', `Starting balance must be at least ${MIN_STARTING_HKD} HKD.`);
     return;
   }
 
   try {
-    const { passwordHash, passwordSalt } = await hashPassword(password);
     const portfolio = createEmptyPortfolio(startingHkd);
     const { hkdRates } = await refreshRates({ force: true });
     seedInitialSnapshot(portfolio, hkdRates);
-
-    saveAccount(email, {
-      name,
-      passwordHash,
-      passwordSalt,
-      portfolio,
-    });
-
-    setSession(email);
-    signupForm.reset();
+    savePortfolio(portfolio);
     await renderDashboard();
   } catch (error) {
-    showError('signup-error', error.message);
+    showError('setup-error', error.message);
   }
-}
-
-async function handleLogin(event) {
-  event.preventDefault();
-  showError('login-error', '');
-
-  const form = new FormData(loginForm);
-  const email = String(form.get('email')).trim().toLowerCase();
-  const password = String(form.get('password'));
-
-  const stored = getAccount(email);
-
-  if (!stored) {
-    showError('login-error', 'No account found for this email.');
-    return;
-  }
-
-  const valid = await verifyPassword(password, stored.passwordHash, stored.passwordSalt);
-  if (!valid) {
-    showError('login-error', 'Incorrect password.');
-    return;
-  }
-
-  setSession(email);
-  loginForm.reset();
-  await renderDashboard();
 }
 
 async function handleTrade(event) {
   event.preventDefault();
   showError('trade-error', '');
-
-  const session = getSession();
-  if (!session) {
-    showView('login');
-    return;
-  }
 
   const form = new FormData(tradeForm);
   const fromCurrency = String(form.get('fromCurrency'));
@@ -373,7 +284,7 @@ async function handleTrade(event) {
   const amount = Number(form.get('amount'));
 
   try {
-    await executeTrade(session.email, { fromCurrency, toCurrency, amount });
+    await executeTrade({ fromCurrency, toCurrency, amount });
     tradeForm.amount.value = '';
     await renderDashboard();
   } catch (error) {
@@ -382,17 +293,14 @@ async function handleTrade(event) {
 }
 
 function handleExport() {
-  const session = getSession();
-  if (!session) return;
-
   try {
-    const payload = exportAccount(session.email);
+    const payload = exportPortfolio();
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     const stamp = new Date().toISOString().slice(0, 10);
     anchor.href = url;
-    anchor.download = `fxsim-${session.email.replace(/[^a-z0-9]/gi, '-')}-${stamp}.json`;
+    anchor.download = `fxsim-${stamp}.json`;
     anchor.click();
     URL.revokeObjectURL(url);
   } catch (error) {
@@ -400,7 +308,7 @@ function handleExport() {
   }
 }
 
-async function handleImport(event) {
+async function handleImport(event, { fromSetup = false } = {}) {
   const file = event.target.files?.[0];
   event.target.value = '';
   if (!file) return;
@@ -408,52 +316,41 @@ async function handleImport(event) {
   try {
     const text = await file.text();
     const payload = JSON.parse(text);
-    const email = payload.account?.email?.toLowerCase();
-    const exists = email && accountExists(email);
-    const replace = exists
-      ? window.confirm(
-          `Account ${email} already exists on this device. Replace it with the imported backup?`,
-        )
-      : false;
 
-    if (exists && !replace) {
-      return;
+    if (getPortfolio()) {
+      const confirmed = window.confirm(
+        'Replace your current portfolio with the imported backup?',
+      );
+      if (!confirmed) return;
     }
 
-    const importedEmail = importAccount(payload, { replace });
-    const loginNow = window.confirm(
-      `Import successful for ${importedEmail}. Log in with this account now?`,
-    );
-
-    if (loginNow) {
-      setSession(importedEmail);
-      await renderDashboard();
+    importPortfolio(payload);
+    if (fromSetup) {
+      setupForm.reset();
+      setupForm.startingHkd.value = DEFAULT_STARTING_HKD;
     }
+    await renderDashboard();
   } catch (error) {
     alert(error.message);
   }
 }
 
-function bindNavigation() {
-  document.body.addEventListener('click', (event) => {
-    const target = event.target.closest('[data-nav]');
-    if (!target) return;
-    event.preventDefault();
-    const view = target.dataset.nav;
-    if (view === 'dashboard') {
-      renderDashboard();
-    } else {
-      showView(view);
-    }
-  });
+function handleReset() {
+  const confirmed = window.confirm(
+    'Reset your portfolio? This clears all data from this browser. Export a backup first if you want to keep it.',
+  );
+  if (!confirmed) return;
+
+  clearPortfolio();
+  setupForm.reset();
+  setupForm.startingHkd.value = DEFAULT_STARTING_HKD;
+  showView('setup');
 }
 
 function init() {
-  bindNavigation();
   populateCurrencySelects();
 
-  signupForm.addEventListener('submit', handleSignup);
-  loginForm.addEventListener('submit', handleLogin);
+  setupForm.addEventListener('submit', handleSetup);
   tradeForm.addEventListener('submit', handleTrade);
 
   tradeForm.addEventListener('input', () => {
@@ -464,28 +361,18 @@ function init() {
   document.getElementById('trade-from').addEventListener('change', previewTrade);
   document.getElementById('trade-to').addEventListener('change', previewTrade);
 
-  document.getElementById('btn-logout').addEventListener('click', () => {
-    clearSession();
-    showView('landing');
-  });
-
+  document.getElementById('btn-reset').addEventListener('click', handleReset);
   document.getElementById('btn-export').addEventListener('click', handleExport);
   document.getElementById('btn-refresh-rates').addEventListener('click', async () => {
-    const session = getSession();
-    if (!session) return;
     await refreshRates({ force: true });
-    await snapshotOnRefresh(session.email);
+    await snapshotOnRefresh();
     await renderDashboard();
   });
 
   importFile.addEventListener('change', handleImport);
+  setupImportFile.addEventListener('change', (event) => handleImport(event, { fromSetup: true }));
 
-  const session = getSession();
-  if (session) {
-    renderDashboard();
-  } else {
-    showView('landing');
-  }
+  renderDashboard();
 }
 
 init();

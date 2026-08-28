@@ -1,10 +1,9 @@
 export const STORAGE_KEYS = {
-  accounts: 'fxsim:accounts',
-  session: 'fxsim:session',
+  portfolio: 'fxsim:portfolio',
 };
 
 export const EXPORT_FORMAT = 'fxsim-export';
-export const EXPORT_VERSION = 1;
+export const EXPORT_VERSION = 2;
 
 export const CURRENCIES = [
   'HKD',
@@ -20,5 +19,6 @@ export const CURRENCIES = [
 ];
 
 export const DEFAULT_CURRENCY = 'HKD';
+export const DEFAULT_STARTING_HKD = 10000;
 export const MIN_STARTING_HKD = 1000;
 export const RATE_CACHE_MS = 5 * 60 * 1000;

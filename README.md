@@ -1,16 +1,17 @@
 # FX Sim — Currency Trading Simulator
 
-A plain HTML/CSS/JavaScript web app for paper currency trading. Create an account, start with Hong Kong dollars (HKD), convert into other major currencies at live exchange rates, and track how your simulated wealth changes over time.
+A thin client-side web app for paper currency trading. Start with Hong Kong dollars (HKD), convert into other major currencies at live exchange rates, and track how your simulated wealth changes over time.
 
-All account data is stored **locally in your browser**. You can **export** and **import** a JSON backup file to keep your portfolio with you.
+All data is stored **locally in your browser**. Export and import a JSON backup file to move your portfolio between devices.
 
 ## Features
 
-- Sign up with a starting HKD balance (minimum 1,000 HKD)
+- Start with a configurable HKD balance (minimum 1,000 HKD)
 - Trade between 10 major currencies using live rates from [Frankfurter](https://frankfurter.dev)
 - Dashboard with total wealth (HKD), profit/loss vs starting deposit, holdings, and trade history
 - Wealth-over-time chart
 - Export / import JSON backup files
+- No accounts, passwords, or backend
 
 ## Run locally
 
@@ -46,24 +47,18 @@ Exported files look like this:
 ```json
 {
   "format": "fxsim-export",
-  "version": 1,
+  "version": 2,
   "exportedAt": "2026-08-28T10:00:00.000Z",
-  "account": {
-    "email": "you@example.com",
-    "name": "Your Name",
-    "passwordHash": "...",
-    "passwordSalt": "...",
-    "portfolio": {
-      "startingHkd": 10000,
-      "balances": { "HKD": 5000, "USD": 641.03 },
-      "transactions": [],
-      "snapshots": []
-    }
+  "portfolio": {
+    "startingHkd": 10000,
+    "balances": { "HKD": 5000, "USD": 641.03 },
+    "transactions": [],
+    "snapshots": []
   }
 }
 ```
 
-Import restores the full account (including credentials) on the current device. If the email already exists, you will be asked whether to replace it.
+Import replaces the current portfolio on this device. v1 exports (with an `account` wrapper) are still supported.
 
 ## Disclaimer
 

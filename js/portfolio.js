@@ -1,24 +1,23 @@
 import { DEFAULT_CURRENCY } from './constants.js';
 import { getCrossRate, refreshRates, toHkd } from './rates.js';
-import { getAccount, saveAccount } from './storage.js';
+import { getPortfolio, savePortfolio } from './storage.js';
 
 function roundMoney(value) {
   return Math.round(value * 100) / 100;
 }
 
-export async function getPortfolioView(email) {
-  const account = getAccount(email);
-  if (!account) throw new Error('Account not found.');
+export async function getPortfolioView() {
+  const portfolio = getPortfolio();
+  if (!portfolio) throw new Error('No portfolio found.');
 
   const { date, hkdRates } = await refreshRates();
-  const valuation = valuePortfolio(account.portfolio.balances, hkdRates);
-  const starting = account.portfolio.startingHkd;
+  const valuation = valuePortfolio(portfolio.balances, hkdRates);
+  const starting = portfolio.startingHkd;
   const pnl = roundMoney(valuation.totalHkd - starting);
   const pnlPct = starting === 0 ? 0 : (pnl / starting) * 100;
 
   return {
-    name: account.name,
-    portfolio: account.portfolio,
+    portfolio,
     ratesDate: date,
     valuation,
     pnl,
@@ -56,7 +55,7 @@ export function recordSnapshot(portfolio, totalHkd, hkdRates) {
   }
 }
 
-export async function executeTrade(email, { fromCurrency, toCurrency, amount }) {
+export async function executeTrade({ fromCurrency, toCurrency, amount }) {
   if (fromCurrency === toCurrency) {
     throw new Error('Choose two different currencies.');
   }
@@ -65,10 +64,10 @@ export async function executeTrade(email, { fromCurrency, toCurrency, amount }) 
     throw new Error('Enter a valid amount greater than zero.');
   }
 
-  const account = getAccount(email);
-  if (!account) throw new Error('Account not found.');
+  const portfolio = getPortfolio();
+  if (!portfolio) throw new Error('No portfolio found.');
 
-  const available = account.portfolio.balances[fromCurrency] ?? 0;
+  const available = portfolio.balances[fromCurrency] ?? 0;
   if (amount > available + 1e-9) {
     throw new Error(`Insufficient ${fromCurrency} balance.`);
   }
@@ -80,7 +79,6 @@ export async function executeTrade(email, { fromCurrency, toCurrency, amount }) 
     throw new Error('Trade amount is too small after conversion.');
   }
 
-  const portfolio = account.portfolio;
   portfolio.balances[fromCurrency] = roundMoney(available - amount);
   if (portfolio.balances[fromCurrency] <= 0) {
     delete portfolio.balances[fromCurrency];
@@ -103,7 +101,7 @@ export async function executeTrade(email, { fromCurrency, toCurrency, amount }) 
   const { totalHkd } = valuePortfolio(portfolio.balances, hkdRates);
   recordSnapshot(portfolio, totalHkd, hkdRates);
 
-  saveAccount(email, account);
+  savePortfolio(portfolio);
 
   return {
     fromCurrency,
@@ -115,22 +113,22 @@ export async function executeTrade(email, { fromCurrency, toCurrency, amount }) 
   };
 }
 
-export async function snapshotOnRefresh(email) {
-  const account = getAccount(email);
-  if (!account) return null;
+export async function snapshotOnRefresh() {
+  const portfolio = getPortfolio();
+  if (!portfolio) return null;
 
   const { hkdRates } = await refreshRates();
-  const { totalHkd } = valuePortfolio(account.portfolio.balances, hkdRates);
+  const { totalHkd } = valuePortfolio(portfolio.balances, hkdRates);
 
-  const last = account.portfolio.snapshots.at(-1);
+  const last = portfolio.snapshots.at(-1);
   const shouldRecord =
     !last ||
     Math.abs(last.totalValueHkd - totalHkd) >= 0.01 ||
     Date.now() - new Date(last.at).getTime() > 15 * 60 * 1000;
 
   if (shouldRecord) {
-    recordSnapshot(account.portfolio, totalHkd, hkdRates);
-    saveAccount(email, account);
+    recordSnapshot(portfolio, totalHkd, hkdRates);
+    savePortfolio(portfolio);
   }
 
   return totalHkd;
