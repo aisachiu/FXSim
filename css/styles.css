@@ -38,7 +38,7 @@ a {
 }
 
 .container {
-  width: min(960px, 100%);
+  width: min(1100px, 100%);
   margin: 0 auto;
   padding: 0 1rem;
 }
@@ -62,10 +62,94 @@ a {
   letter-spacing: -0.02em;
 }
 
-.header-nav {
+.tab-nav {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.35rem;
   align-items: center;
+}
+
+.tab {
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab.active {
+  background: var(--primary);
+  color: #fff;
+}
+
+.sim-bar {
+  background: #f3f4f6;
+  border-bottom: 1px solid var(--border);
+}
+
+.sim-bar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  flex-wrap: wrap;
+}
+
+.sim-status {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 12rem;
+}
+
+.sim-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.sim-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.speed-control,
+.jump-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.speed-control input[type="range"] {
+  width: 7rem;
+  margin: 0;
+  padding: 0;
+}
+
+.jump-control input[type="date"],
+.sim-mode-select {
+  width: auto;
+  margin: 0;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.setup-help {
+  margin: -0.5rem 0 1rem;
 }
 
 main {
@@ -330,6 +414,32 @@ td.num {
   height: 260px;
 }
 
+.chart-wrap-lg {
+  height: 360px;
+}
+
+.chart-controls {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.range-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.range-presets .btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.chart-hint {
+  margin: 0 0 0.75rem;
+}
+
 .trade-preview {
   margin: 0 0 1rem;
   min-height: 1.25rem;
@@ -346,7 +456,17 @@ td.num {
     grid-template-columns: 1fr;
   }
 
-  .dashboard-header {
+  .dashboard-header,
+  .sim-bar-inner {
     flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sim-controls {
+    width: 100%;
+  }
+
+  .speed-control input[type="range"] {
+    flex: 1;
   }
 }

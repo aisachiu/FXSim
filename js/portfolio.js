@@ -1,16 +1,28 @@
 import { DEFAULT_CURRENCY } from './constants.js';
 import { getCrossRate, refreshRates, toHkd } from './rates.js';
+import { applyRateContext, getSimulation, simulationTimestamp } from './simulation.js';
 import { getPortfolio, savePortfolio } from './storage.js';
 
 function roundMoney(value) {
   return Math.round(value * 100) / 100;
 }
 
+async function ratesForSimulation() {
+  const simulation = getSimulation();
+  applyRateContext(simulation);
+
+  if (simulation.mode === 'historical') {
+    return refreshRates({ date: simulation.currentDate, force: false });
+  }
+
+  return refreshRates({ force: false });
+}
+
 export async function getPortfolioView() {
   const portfolio = getPortfolio();
   if (!portfolio) throw new Error('No portfolio found.');
 
-  const { date, hkdRates } = await refreshRates();
+  const { date, hkdRates } = await ratesForSimulation();
   const valuation = valuePortfolio(portfolio.balances, hkdRates);
   const starting = portfolio.startingHkd;
   const pnl = roundMoney(valuation.totalHkd - starting);
@@ -18,6 +30,7 @@ export async function getPortfolioView() {
 
   return {
     portfolio,
+    simulation: getSimulation(),
     ratesDate: date,
     valuation,
     pnl,
@@ -43,15 +56,15 @@ export function valuePortfolio(balances, hkdRates) {
   return { totalHkd, holdings: rows };
 }
 
-export function recordSnapshot(portfolio, totalHkd, hkdRates) {
+export function recordSnapshot(portfolio, totalHkd, hkdRates, at) {
   portfolio.snapshots.push({
-    at: new Date().toISOString(),
+    at,
     totalValueHkd: totalHkd,
     rates: { ...hkdRates },
   });
 
-  if (portfolio.snapshots.length > 200) {
-    portfolio.snapshots = portfolio.snapshots.slice(-200);
+  if (portfolio.snapshots.length > 500) {
+    portfolio.snapshots = portfolio.snapshots.slice(-500);
   }
 }
 
@@ -67,12 +80,16 @@ export async function executeTrade({ fromCurrency, toCurrency, amount }) {
   const portfolio = getPortfolio();
   if (!portfolio) throw new Error('No portfolio found.');
 
+  const simulation = getSimulation();
+  applyRateContext(simulation);
+
   const available = portfolio.balances[fromCurrency] ?? 0;
   if (amount > available + 1e-9) {
     throw new Error(`Insufficient ${fromCurrency} balance.`);
   }
 
-  const { rate, date } = await getCrossRate(fromCurrency, toCurrency);
+  const rateDate = simulation.mode === 'historical' ? simulation.currentDate : undefined;
+  const { rate, date } = await getCrossRate(fromCurrency, toCurrency, { date: rateDate });
   const toAmount = roundMoney(amount * rate);
 
   if (toAmount <= 0) {
@@ -88,7 +105,7 @@ export async function executeTrade({ fromCurrency, toCurrency, amount }) {
 
   portfolio.transactions.unshift({
     id: crypto.randomUUID(),
-    at: new Date().toISOString(),
+    at: simulationTimestamp(simulation),
     rateDate: date,
     fromCurrency,
     toCurrency,
@@ -97,9 +114,9 @@ export async function executeTrade({ fromCurrency, toCurrency, amount }) {
     rate,
   });
 
-  const { hkdRates } = await refreshRates({ force: true });
+  const { hkdRates } = await ratesForSimulation();
   const { totalHkd } = valuePortfolio(portfolio.balances, hkdRates);
-  recordSnapshot(portfolio, totalHkd, hkdRates);
+  recordSnapshot(portfolio, totalHkd, hkdRates, simulationTimestamp(simulation));
 
   savePortfolio(portfolio);
 
@@ -117,24 +134,32 @@ export async function snapshotOnRefresh() {
   const portfolio = getPortfolio();
   if (!portfolio) return null;
 
-  const { hkdRates } = await refreshRates();
+  const simulation = getSimulation();
+  const { hkdRates } = await ratesForSimulation();
   const { totalHkd } = valuePortfolio(portfolio.balances, hkdRates);
+  const at = simulationTimestamp(simulation);
 
   const last = portfolio.snapshots.at(-1);
+  const lastDay = last?.at?.slice(0, 10);
+  const currentDay = simulation.currentDate;
   const shouldRecord =
     !last ||
-    Math.abs(last.totalValueHkd - totalHkd) >= 0.01 ||
-    Date.now() - new Date(last.at).getTime() > 15 * 60 * 1000;
+    lastDay !== currentDay ||
+    Math.abs(last.totalValueHkd - totalHkd) >= 0.01;
 
   if (shouldRecord) {
-    recordSnapshot(portfolio, totalHkd, hkdRates);
+    recordSnapshot(portfolio, totalHkd, hkdRates, at);
     savePortfolio(portfolio);
   }
 
   return totalHkd;
 }
 
-export function seedInitialSnapshot(portfolio, hkdRates) {
+export function seedInitialSnapshot(portfolio, hkdRates, at) {
   const { totalHkd } = valuePortfolio(portfolio.balances, hkdRates);
-  recordSnapshot(portfolio, totalHkd, hkdRates);
+  recordSnapshot(portfolio, totalHkd, hkdRates, at);
+}
+
+export async function revalueAtCurrentDate() {
+  return snapshotOnRefresh();
 }

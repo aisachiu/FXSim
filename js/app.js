@@ -1,8 +1,10 @@
 import {
-  CURRENCIES,
   DEFAULT_CURRENCY,
   DEFAULT_STARTING_HKD,
+  HISTORY_EARLIEST,
   MIN_STARTING_HKD,
+  currenciesForDate,
+  todayIso,
 } from './constants.js';
 import {
   executeTrade,
@@ -10,7 +12,22 @@ import {
   seedInitialSnapshot,
   snapshotOnRefresh,
 } from './portfolio.js';
+import { bindRatesView, jumpSimulationToDate, refreshRatesChart, resetChartState } from './rates-view.js';
 import { getCrossRate, refreshRates } from './rates.js';
+import {
+  applyRateContext,
+  canStepForward,
+  ensureTradingDays,
+  getSimulation,
+  initSimulation,
+  isPlaying,
+  setMode,
+  setPlaybackSpeed,
+  startPlayback,
+  stepForward,
+  stepToDate,
+  stopPlayback,
+} from './simulation.js';
 import {
   clearPortfolio,
   createEmptyPortfolio,
@@ -22,16 +39,21 @@ import {
 
 const views = {
   setup: document.getElementById('view-setup'),
-  dashboard: document.getElementById('view-dashboard'),
+  portfolio: document.getElementById('view-portfolio'),
+  rates: document.getElementById('view-rates'),
 };
 
 const setupForm = document.getElementById('setup-form');
+const setupStartDate = document.getElementById('setup-start-date');
 const tradeForm = document.getElementById('trade-form');
 const importFile = document.getElementById('import-file');
 const setupImportFile = document.getElementById('setup-import-file');
+const tabNav = document.getElementById('tab-nav');
+const simBar = document.getElementById('sim-bar');
 
 let wealthChart = null;
 let previewTimer = null;
+let activeTab = 'portfolio';
 
 function formatMoney(value, currency = DEFAULT_CURRENCY) {
   return new Intl.NumberFormat(undefined, {
@@ -51,6 +73,12 @@ function formatNumber(value, digits = 2) {
 function formatDate(iso) {
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: 'medium',
+  }).format(new Date(`${iso.slice(0, 10)}T12:00:00Z`));
+}
+
+function formatDateTime(iso) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(iso));
 }
@@ -59,6 +87,11 @@ function showView(name) {
   Object.entries(views).forEach(([key, element]) => {
     element.classList.toggle('hidden', key !== name);
   });
+}
+
+function showAppChrome(show) {
+  tabNav.classList.toggle('hidden', !show);
+  simBar.classList.toggle('hidden', !show);
 }
 
 function showError(elementId, message) {
@@ -72,19 +105,31 @@ function showError(elementId, message) {
   el.classList.remove('hidden');
 }
 
-function populateCurrencySelects() {
+function setActiveTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab').forEach((button) => {
+    button.classList.toggle('active', button.dataset.tab === tab);
+  });
+  showView(tab === 'rates' ? 'rates' : 'portfolio');
+}
+
+function populateCurrencySelects(simulationDate) {
+  const allowed = currenciesForDate(simulationDate);
   const from = document.getElementById('trade-from');
   const to = document.getElementById('trade-to');
+  const previousFrom = from.value || DEFAULT_CURRENCY;
+  const previousTo = to.value || 'USD';
+
   from.innerHTML = '';
   to.innerHTML = '';
 
-  for (const code of CURRENCIES) {
+  for (const code of allowed) {
     from.append(new Option(code, code));
     to.append(new Option(code, code));
   }
 
-  from.value = DEFAULT_CURRENCY;
-  to.value = 'USD';
+  from.value = allowed.includes(previousFrom) ? previousFrom : DEFAULT_CURRENCY;
+  to.value = allowed.includes(previousTo) ? previousTo : allowed.find((c) => c !== from.value) ?? 'USD';
 }
 
 function renderHoldings(holdings) {
@@ -123,7 +168,7 @@ function renderTransactions(transactions) {
   for (const tx of transactions.slice(0, 20)) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${formatDate(tx.at)}</td>
+      <td>${formatDateTime(tx.at)}</td>
       <td class="num">${formatMoney(tx.fromAmount, tx.fromCurrency)}</td>
       <td class="num">${formatMoney(tx.toAmount, tx.toCurrency)}</td>
       <td class="num">1 ${tx.fromCurrency} = ${formatNumber(tx.rate, 6)} ${tx.toCurrency}</td>
@@ -132,13 +177,13 @@ function renderTransactions(transactions) {
   }
 }
 
-function renderChart(snapshots, startingHkd) {
+function renderWealthChart(snapshots, startingHkd) {
   const canvas = document.getElementById('wealth-chart');
   const labels = snapshots.map((point) => formatDate(point.at));
   const values = snapshots.map((point) => point.totalValueHkd);
 
   if (labels.length === 0) {
-    labels.push(formatDate(new Date().toISOString()));
+    labels.push(formatDate(todayIso()));
     values.push(startingHkd);
   }
 
@@ -187,21 +232,65 @@ function renderChart(snapshots, startingHkd) {
   });
 }
 
-async function renderDashboard() {
+function updateSimulationControls(simulation) {
+  document.getElementById('sim-current-date').textContent = formatDate(simulation.currentDate);
+  document.getElementById('sim-mode-label').textContent =
+    simulation.mode === 'historical' ? 'Historical' : 'Live';
+  document.getElementById('sim-mode').value = simulation.mode;
+  document.getElementById('sim-speed').value = String(simulation.playbackSpeed);
+  document.getElementById('sim-speed-label').textContent = `${simulation.playbackSpeed}×`;
+
+  const jumpInput = document.getElementById('sim-jump-date');
+  jumpInput.min = simulation.startDate;
+  jumpInput.max = todayIso();
+  jumpInput.value = simulation.currentDate;
+
+  const playButton = document.getElementById('btn-play');
+  playButton.textContent = isPlaying() ? '⏸' : '▶';
+  playButton.disabled = simulation.mode !== 'historical';
+  document.getElementById('btn-step').disabled =
+    simulation.mode !== 'historical' || !canStepForward(simulation);
+
+  const historicalControlsDisabled = simulation.mode !== 'historical';
+  document.getElementById('sim-speed').disabled = historicalControlsDisabled;
+  document.getElementById('btn-jump').disabled = historicalControlsDisabled;
+  jumpInput.disabled = historicalControlsDisabled;
+}
+
+async function refreshAllViews() {
   if (!getPortfolio()) {
+    showAppChrome(false);
     showView('setup');
     return;
   }
 
-  showView('dashboard');
+  showAppChrome(true);
+  const simulation = getSimulation();
+  applyRateContext(simulation);
 
+  if (simulation.mode === 'historical') {
+    await ensureTradingDays(simulation.startDate, todayIso());
+  }
+
+  updateSimulationControls(simulation);
+
+  if (activeTab === 'portfolio') {
+    await renderPortfolio();
+  } else {
+    await refreshRatesChart(handleChartDateSelect);
+  }
+}
+
+async function renderPortfolio() {
   try {
     await snapshotOnRefresh();
     const data = await getPortfolioView();
-    const { portfolio, valuation, pnl, pnlPct } = data;
+    const { portfolio, valuation, pnl, pnlPct, simulation, ratesDate } = data;
 
     document.getElementById('rates-updated').textContent =
-      `Rates as of ${data.ratesDate ?? 'today'} · updated just now`;
+      simulation.mode === 'historical'
+        ? `Rates as of ${formatDate(ratesDate)} · simulation date`
+        : `Live rates as of ${formatDate(ratesDate)}`;
 
     document.getElementById('total-wealth').textContent = formatMoney(
       valuation.totalHkd,
@@ -219,16 +308,27 @@ async function renderDashboard() {
     pnlEl.textContent = `${sign}${formatMoney(pnl, DEFAULT_CURRENCY)} (${sign}${formatNumber(pnlPct, 2)}%) vs start`;
     pnlEl.className = `pnl ${pnl >= 0 ? 'positive' : 'negative'}`;
 
-    populateCurrencySelects();
+    populateCurrencySelects(simulation.currentDate);
     renderHoldings(valuation.holdings);
     renderTransactions(portfolio.transactions);
-    renderChart(portfolio.snapshots, portfolio.startingHkd);
+    renderWealthChart(portfolio.snapshots, portfolio.startingHkd);
+    updateSimulationControls(simulation);
   } catch (error) {
     showError('trade-error', error.message);
   }
 }
 
+async function handleChartDateSelect(date) {
+  try {
+    stopPlayback();
+    await jumpSimulationToDate(date, refreshAllViews);
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
 async function previewTrade() {
+  const simulation = getSimulation();
   const fromCurrency = document.getElementById('trade-from').value;
   const toCurrency = document.getElementById('trade-to').value;
   const amount = Number(tradeForm.amount.value);
@@ -241,13 +341,14 @@ async function previewTrade() {
   }
 
   try {
-    const { rate } = await getCrossRate(fromCurrency, toCurrency);
+    const rateDate = simulation.mode === 'historical' ? simulation.currentDate : undefined;
+    const { rate } = await getCrossRate(fromCurrency, toCurrency, { date: rateDate });
     const converted = Math.round(amount * rate * 100) / 100;
     preview.textContent =
       `${formatMoney(amount, fromCurrency)} → ${formatMoney(converted, toCurrency)} ` +
       `(1 ${fromCurrency} = ${formatNumber(rate, 6)} ${toCurrency})`;
   } catch {
-    preview.textContent = 'Could not fetch live rate for preview.';
+    preview.textContent = 'Could not fetch rate for preview.';
   }
 }
 
@@ -257,18 +358,37 @@ async function handleSetup(event) {
 
   const form = new FormData(setupForm);
   const startingHkd = Number(form.get('startingHkd'));
+  const startDate = String(form.get('startDate'));
 
   if (!Number.isFinite(startingHkd) || startingHkd < MIN_STARTING_HKD) {
     showError('setup-error', `Starting balance must be at least ${MIN_STARTING_HKD} HKD.`);
     return;
   }
 
+  if (!startDate) {
+    showError('setup-error', 'Choose a simulation start date.');
+    return;
+  }
+
   try {
-    const portfolio = createEmptyPortfolio(startingHkd);
-    const { hkdRates } = await refreshRates({ force: true });
-    seedInitialSnapshot(portfolio, hkdRates);
+    const portfolio = createEmptyPortfolio(startingHkd, startDate);
+    initSimulation(startDate);
+    applyRateContext(getSimulation());
+
+    const { hkdRates } = await refreshRates({
+      date: getSimulation().mode === 'historical' ? getSimulation().currentDate : undefined,
+      force: true,
+    });
+
+    seedInitialSnapshot(
+      portfolio,
+      hkdRates,
+      `${getSimulation().currentDate}T12:00:00.000Z`,
+    );
     savePortfolio(portfolio);
-    await renderDashboard();
+
+    setActiveTab('portfolio');
+    await refreshAllViews();
   } catch (error) {
     showError('setup-error', error.message);
   }
@@ -286,7 +406,7 @@ async function handleTrade(event) {
   try {
     await executeTrade({ fromCurrency, toCurrency, amount });
     tradeForm.amount.value = '';
-    await renderDashboard();
+    await refreshAllViews();
   } catch (error) {
     showError('trade-error', error.message);
   }
@@ -298,7 +418,7 @@ function handleExport() {
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
-    const stamp = new Date().toISOString().slice(0, 10);
+    const stamp = todayIso();
     anchor.href = url;
     anchor.download = `fxsim-${stamp}.json`;
     anchor.click();
@@ -324,12 +444,18 @@ async function handleImport(event, { fromSetup = false } = {}) {
       if (!confirmed) return;
     }
 
+    stopPlayback();
     importPortfolio(payload);
+    applyRateContext(getSimulation());
+
     if (fromSetup) {
       setupForm.reset();
       setupForm.startingHkd.value = DEFAULT_STARTING_HKD;
+      setupStartDate.value = '2010-01-05';
     }
-    await renderDashboard();
+
+    setActiveTab('portfolio');
+    await refreshAllViews();
   } catch (error) {
     alert(error.message);
   }
@@ -341,14 +467,78 @@ function handleReset() {
   );
   if (!confirmed) return;
 
+  stopPlayback();
+  resetChartState();
   clearPortfolio();
   setupForm.reset();
   setupForm.startingHkd.value = DEFAULT_STARTING_HKD;
+  setupStartDate.value = '2010-01-05';
+  showAppChrome(false);
   showView('setup');
 }
 
+async function handlePlayPause() {
+  const simulation = getSimulation();
+  if (simulation.mode !== 'historical') return;
+
+  if (isPlaying()) {
+    stopPlayback();
+    updateSimulationControls(getSimulation());
+    return;
+  }
+
+  startPlayback(refreshAllViews);
+  updateSimulationControls(getSimulation());
+}
+
+async function handleStep() {
+  try {
+    const advanced = await stepForward();
+    if (!advanced) {
+      stopPlayback();
+    }
+    await refreshAllViews();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function handleJump() {
+  const target = document.getElementById('sim-jump-date').value;
+  if (!target) return;
+
+  try {
+    stopPlayback();
+    await stepToDate(target);
+    await refreshAllViews();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function handleModeChange() {
+  const mode = document.getElementById('sim-mode').value;
+  stopPlayback();
+  setMode(mode);
+  await refreshAllViews();
+}
+
+function bindTabs() {
+  document.querySelectorAll('.tab').forEach((button) => {
+    button.addEventListener('click', async () => {
+      setActiveTab(button.dataset.tab);
+      await refreshAllViews();
+    });
+  });
+}
+
 function init() {
-  populateCurrencySelects();
+  setupStartDate.min = HISTORY_EARLIEST;
+  setupStartDate.max = todayIso();
+  setupStartDate.value = '2010-01-05';
+
+  bindTabs();
+  bindRatesView(handleChartDateSelect);
 
   setupForm.addEventListener('submit', handleSetup);
   tradeForm.addEventListener('submit', handleTrade);
@@ -363,16 +553,28 @@ function init() {
 
   document.getElementById('btn-reset').addEventListener('click', handleReset);
   document.getElementById('btn-export').addEventListener('click', handleExport);
-  document.getElementById('btn-refresh-rates').addEventListener('click', async () => {
-    await refreshRates({ force: true });
-    await snapshotOnRefresh();
-    await renderDashboard();
+  document.getElementById('btn-play').addEventListener('click', handlePlayPause);
+  document.getElementById('btn-step').addEventListener('click', handleStep);
+  document.getElementById('btn-jump').addEventListener('click', handleJump);
+  document.getElementById('sim-mode').addEventListener('change', handleModeChange);
+
+  document.getElementById('sim-speed').addEventListener('input', (event) => {
+    const speed = Number(event.target.value);
+    document.getElementById('sim-speed-label').textContent = `${speed}×`;
+    setPlaybackSpeed(speed);
   });
 
   importFile.addEventListener('change', handleImport);
   setupImportFile.addEventListener('change', (event) => handleImport(event, { fromSetup: true }));
 
-  renderDashboard();
+  if (getPortfolio()) {
+    applyRateContext(getSimulation());
+    setActiveTab('portfolio');
+    refreshAllViews();
+  } else {
+    showAppChrome(false);
+    showView('setup');
+  }
 }
 
 init();

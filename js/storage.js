@@ -1,10 +1,15 @@
-import { EXPORT_FORMAT, EXPORT_VERSION, STORAGE_KEYS } from './constants.js';
+import { DEFAULT_STARTING_HKD, EXPORT_FORMAT, EXPORT_VERSION, STORAGE_KEYS } from './constants.js';
+import { normalizeSimulation } from './simulation.js';
 
 export function getPortfolio() {
   const raw = localStorage.getItem(STORAGE_KEYS.portfolio);
   if (!raw) return null;
   try {
-    return JSON.parse(raw);
+    const portfolio = JSON.parse(raw);
+    if (portfolio && !portfolio.simulation) {
+      portfolio.simulation = normalizeSimulation(null, '2010-01-05');
+    }
+    return portfolio;
   } catch {
     return null;
   }
@@ -18,12 +23,13 @@ export function clearPortfolio() {
   localStorage.removeItem(STORAGE_KEYS.portfolio);
 }
 
-export function createEmptyPortfolio(startingHkd) {
+export function createEmptyPortfolio(startingHkd, startDate = '2010-01-05') {
   return {
     startingHkd,
     balances: { HKD: startingHkd },
     transactions: [],
     snapshots: [],
+    simulation: normalizeSimulation(null, startDate),
   };
 }
 
@@ -32,7 +38,6 @@ function extractPortfolio(payload) {
     return payload.portfolio;
   }
 
-  // v1 exports wrapped portfolio inside account
   if (payload.account?.portfolio) {
     return payload.account.portfolio;
   }
@@ -57,6 +62,11 @@ function validatePortfolio(portfolio) {
   if (!Array.isArray(portfolio.snapshots)) {
     portfolio.snapshots = [];
   }
+
+  portfolio.simulation = normalizeSimulation(
+    portfolio.simulation,
+    portfolio.snapshots[0]?.at?.slice(0, 10) ?? '2010-01-05',
+  );
 
   return portfolio;
 }
@@ -84,3 +94,5 @@ export function importPortfolio(payload) {
   savePortfolio(portfolio);
   return portfolio;
 }
+
+export { DEFAULT_STARTING_HKD };

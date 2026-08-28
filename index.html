@@ -12,23 +12,61 @@
   <header class="site-header">
     <div class="container header-inner">
       <span class="logo">FX Sim</span>
-      <nav class="header-nav" id="header-nav"></nav>
+      <nav class="tab-nav hidden" id="tab-nav">
+        <button class="tab active" data-tab="portfolio" type="button">Portfolio</button>
+        <button class="tab" data-tab="rates" type="button">Exchange Rates</button>
+      </nav>
     </div>
   </header>
 
+  <div class="sim-bar hidden" id="sim-bar">
+    <div class="sim-bar-inner container">
+      <div class="sim-status">
+        <span class="sim-label" id="sim-mode-label">Historical</span>
+        <strong id="sim-current-date">—</strong>
+      </div>
+
+      <div class="sim-controls">
+        <button class="btn btn-secondary btn-sm" id="btn-play" type="button" title="Play / Pause">▶</button>
+        <button class="btn btn-secondary btn-sm" id="btn-step" type="button">+1 day</button>
+
+        <label class="speed-control">
+          <span>Speed</span>
+          <input type="range" id="sim-speed" min="1" max="50" value="5">
+          <span id="sim-speed-label">5×</span>
+        </label>
+
+        <label class="jump-control">
+          <span>Go to</span>
+          <input type="date" id="sim-jump-date">
+        </label>
+        <button class="btn btn-secondary btn-sm" id="btn-jump" type="button">Go</button>
+
+        <select id="sim-mode" class="sim-mode-select" aria-label="Simulation mode">
+          <option value="historical">Historical</option>
+          <option value="live">Live (today)</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
   <main class="container">
-    <!-- First-time setup -->
     <section id="view-setup" class="view hidden">
       <div class="card setup-card">
         <h1>Start simulating</h1>
         <p class="lead">
-          Paper-trade major currencies at live exchange rates. Everything stays in your browser.
+          Paper-trade major currencies using historical or live exchange rates. Everything stays in your browser.
         </p>
         <form id="setup-form">
           <label>
             Starting balance (HKD)
             <input type="number" name="startingHkd" min="1000" step="0.01" value="10000" required>
           </label>
+          <label>
+            Simulation start date
+            <input type="date" name="startDate" id="setup-start-date" required>
+          </label>
+          <p class="muted setup-help">Begin in the past and step forward through history, or pick today for live rates.</p>
           <p class="form-error hidden" id="setup-error"></p>
           <button type="submit" class="btn btn-primary btn-block">Start</button>
         </form>
@@ -36,21 +74,19 @@
       </div>
     </section>
 
-    <!-- Dashboard -->
-    <section id="view-dashboard" class="view hidden">
+    <section id="view-portfolio" class="view hidden">
       <div class="dashboard-header">
         <div>
           <h2>Portfolio</h2>
           <p class="muted" id="rates-updated">Rates loading…</p>
         </div>
         <div class="dashboard-actions">
-          <button class="btn btn-secondary btn-sm" id="btn-refresh-rates">Refresh rates</button>
-          <button class="btn btn-secondary btn-sm" id="btn-export">Export JSON</button>
+          <button class="btn btn-secondary btn-sm" id="btn-export" type="button">Export JSON</button>
           <label class="btn btn-secondary btn-sm file-btn">
             Import JSON
             <input type="file" id="import-file" accept="application/json,.json" hidden>
           </label>
-          <button class="btn btn-ghost btn-sm" id="btn-reset">Reset</button>
+          <button class="btn btn-ghost btn-sm" id="btn-reset" type="button">Reset</button>
         </div>
       </div>
 
@@ -132,6 +168,55 @@
           </table>
         </div>
         <p class="muted empty-msg hidden" id="no-trades">No trades yet.</p>
+      </div>
+    </section>
+
+    <section id="view-rates" class="view hidden">
+      <div class="dashboard-header">
+        <div>
+          <h2>Exchange Rates</h2>
+          <p class="muted" id="chart-current-date">—</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="chart-controls">
+          <div class="form-row">
+            <label>
+              Base
+              <select id="chart-base"></select>
+            </label>
+            <label>
+              Quote
+              <select id="chart-quote"></select>
+            </label>
+          </div>
+
+          <div class="range-presets" id="range-presets">
+            <button class="btn btn-secondary btn-sm" data-range-preset="1M" type="button">1M</button>
+            <button class="btn btn-secondary btn-sm" data-range-preset="3M" type="button">3M</button>
+            <button class="btn btn-secondary btn-sm" data-range-preset="6M" type="button">6M</button>
+            <button class="btn btn-secondary btn-sm active" data-range-preset="1Y" type="button">1Y</button>
+            <button class="btn btn-secondary btn-sm" data-range-preset="3Y" type="button">3Y</button>
+            <button class="btn btn-secondary btn-sm" data-range-preset="5Y" type="button">5Y</button>
+          </div>
+
+          <div class="form-row">
+            <label>
+              From
+              <input type="date" id="chart-from">
+            </label>
+            <label>
+              To
+              <input type="date" id="chart-to">
+            </label>
+          </div>
+        </div>
+
+        <p class="muted chart-hint" id="chart-hint">Loading…</p>
+        <div class="chart-wrap chart-wrap-lg">
+          <canvas id="rate-chart"></canvas>
+        </div>
       </div>
     </section>
   </main>

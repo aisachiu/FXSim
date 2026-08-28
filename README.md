@@ -1,65 +1,40 @@
 # FX Sim — Currency Trading Simulator
 
-A thin client-side web app for paper currency trading. Start with Hong Kong dollars (HKD), convert into other major currencies at live exchange rates, and track how your simulated wealth changes over time.
+A thin client-side web app for paper currency trading. Start with Hong Kong dollars (HKD), step through historical exchange rates or trade at live rates, and track how your simulated wealth changes over time.
 
 All data is stored **locally in your browser**. Export and import a JSON backup file to move your portfolio between devices.
 
 ## Features
 
-- Start with a configurable HKD balance (minimum 1,000 HKD)
-- Trade between 10 major currencies using live rates from [Frankfurter](https://frankfurter.dev)
-- Dashboard with total wealth (HKD), profit/loss vs starting deposit, holdings, and trade history
-- Wealth-over-time chart
+- Start with a configurable HKD balance and simulation start date (from 1981)
+- **Historical mode** — step forward one trading day, auto-play with speed control, or jump to any date
+- **Exchange Rates tab** — interactive charts with adjustable time range; click a point to jump the simulation
+- Trade between 10 major currencies using rates from [Frankfurter](https://frankfurter.dev)
+- Dashboard with total wealth (HKD), profit/loss, holdings, trade history, and wealth chart
 - Export / import JSON backup files
 - No accounts, passwords, or backend
 
 ## Run locally
 
-ES modules require a local web server (opening `index.html` directly from disk will not work in most browsers).
-
 ```bash
-# Python 3
 python3 -m http.server 8080
-
-# or Node.js (npx)
-npx serve .
 ```
 
 Then open http://localhost:8080
 
-## Deploy on GitHub Pages
+## Deploy
 
-This repo includes [`.github/workflows/pages.yml`](.github/workflows/pages.yml). After the code is pushed to GitHub:
+Pushes to `main` deploy automatically to GitHub Pages via Actions.
 
-1. Create a repository named **`FXSim`** on your GitHub account.
-2. Push the `main` branch to that repo.
-3. In the repo, go to **Settings → Pages** and set **Source** to **GitHub Actions**.
-4. The workflow runs on push and publishes the site.
+Live URL: https://aisachiu.github.io/FXSim/
 
-Live URL: `https://<your-github-username>.github.io/FXSim/`
+## Historical simulation
 
-No backend or database is required.
-
-## Export / import format
-
-Exported files look like this:
-
-```json
-{
-  "format": "fxsim-export",
-  "version": 2,
-  "exportedAt": "2026-08-28T10:00:00.000Z",
-  "portfolio": {
-    "startingHkd": 10000,
-    "balances": { "HKD": 5000, "USD": 641.03 },
-    "transactions": [],
-    "snapshots": []
-  }
-}
-```
-
-Import replaces the current portfolio on this device. v1 exports (with an `account` wrapper) are still supported.
+- Step forward skips weekends and holidays (business days only)
+- Speed dial: 1× to 50× (days per second while playing)
+- EUR is unavailable before 1999-01-04
+- Switch to **Live (today)** for current rates
 
 ## Disclaimer
 
-This is a **simulation only**. No real money is involved. Exchange rates are indicative and update periodically from public sources.
+Simulation only. No real money involved.
