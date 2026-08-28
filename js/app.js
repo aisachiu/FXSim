@@ -1,4 +1,5 @@
 import {
+  ADD_SCENARIO_VALUE,
   DEFAULT_CURRENCY,
   DEFAULT_STARTING_HKD,
   HISTORY_EARLIEST,
@@ -29,12 +30,17 @@ import {
   stopPlayback,
 } from './simulation.js';
 import {
-  clearPortfolio,
-  createEmptyPortfolio,
+  createScenario,
+  deleteScenario,
+  exportFilename,
   exportPortfolio,
+  getActiveScenarioId,
   getPortfolio,
+  hasScenarios,
   importPortfolio,
+  listScenarios,
   savePortfolio,
+  switchScenario,
 } from './storage.js';
 
 const views = {
@@ -45,15 +51,20 @@ const views = {
 
 const setupForm = document.getElementById('setup-form');
 const setupStartDate = document.getElementById('setup-start-date');
+const setupScenarioName = document.getElementById('setup-scenario-name');
 const tradeForm = document.getElementById('trade-form');
 const importFile = document.getElementById('import-file');
 const setupImportFile = document.getElementById('setup-import-file');
 const tabNav = document.getElementById('tab-nav');
 const simBar = document.getElementById('sim-bar');
+const headerTools = document.getElementById('header-tools');
+const scenarioSelect = document.getElementById('scenario-select');
+const btnCancelSetup = document.getElementById('btn-cancel-setup');
 
 let wealthChart = null;
 let previewTimer = null;
 let activeTab = 'portfolio';
+let creatingNewScenario = false;
 
 function formatMoney(value, currency = DEFAULT_CURRENCY) {
   return new Intl.NumberFormat(undefined, {
@@ -92,6 +103,40 @@ function showView(name) {
 function showAppChrome(show) {
   tabNav.classList.toggle('hidden', !show);
   simBar.classList.toggle('hidden', !show);
+  headerTools.classList.toggle('hidden', !show);
+}
+
+function renderScenarioSelect() {
+  const scenarios = listScenarios();
+  const activeId = getActiveScenarioId();
+  scenarioSelect.innerHTML = '';
+
+  for (const scenario of scenarios) {
+    scenarioSelect.append(new Option(scenario.name, scenario.id));
+  }
+
+  scenarioSelect.append(new Option('+ Add new scenario', ADD_SCENARIO_VALUE));
+
+  if (activeId) {
+    scenarioSelect.value = activeId;
+  }
+
+  document.getElementById('btn-delete-scenario').disabled = scenarios.length === 0;
+  btnCancelSetup.classList.toggle('hidden', !creatingNewScenario || scenarios.length === 0);
+}
+
+function showSetupView({ forNewScenario = false } = {}) {
+  creatingNewScenario = forNewScenario;
+  stopPlayback();
+  showAppChrome(hasScenarios());
+  simBar.classList.add('hidden');
+  renderScenarioSelect();
+  showView('setup');
+  setupForm.reset();
+  setupForm.startingHkd.value = DEFAULT_STARTING_HKD;
+  setupStartDate.value = '2010-01-05';
+  setupScenarioName.value = '';
+  setupScenarioName.focus();
 }
 
 function showError(elementId, message) {
@@ -259,12 +304,15 @@ function updateSimulationControls(simulation) {
 
 async function refreshAllViews() {
   if (!getPortfolio()) {
-    showAppChrome(false);
-    showView('setup');
+    showSetupView({ forNewScenario: !hasScenarios() });
     return;
   }
 
+  creatingNewScenario = false;
   showAppChrome(true);
+  simBar.classList.remove('hidden');
+  renderScenarioSelect();
+
   const simulation = getSimulation();
   applyRateContext(simulation);
 
@@ -287,6 +335,7 @@ async function renderPortfolio() {
     const data = await getPortfolioView();
     const { portfolio, valuation, pnl, pnlPct, simulation, ratesDate } = data;
 
+    document.querySelector('#view-portfolio h2').textContent = portfolio.name ?? 'Portfolio';
     document.getElementById('rates-updated').textContent =
       simulation.mode === 'historical'
         ? `Rates as of ${formatDate(ratesDate)} · simulation date`
@@ -357,8 +406,14 @@ async function handleSetup(event) {
   showError('setup-error', '');
 
   const form = new FormData(setupForm);
+  const scenarioName = String(form.get('scenarioName')).trim();
   const startingHkd = Number(form.get('startingHkd'));
   const startDate = String(form.get('startDate'));
+
+  if (!scenarioName) {
+    showError('setup-error', 'Enter a scenario name.');
+    return;
+  }
 
   if (!Number.isFinite(startingHkd) || startingHkd < MIN_STARTING_HKD) {
     showError('setup-error', `Starting balance must be at least ${MIN_STARTING_HKD} HKD.`);
@@ -371,7 +426,7 @@ async function handleSetup(event) {
   }
 
   try {
-    const portfolio = createEmptyPortfolio(startingHkd, startDate);
+    const scenario = createScenario(scenarioName, startingHkd, startDate);
     initSimulation(startDate);
     applyRateContext(getSimulation());
 
@@ -381,12 +436,13 @@ async function handleSetup(event) {
     });
 
     seedInitialSnapshot(
-      portfolio,
+      scenario,
       hkdRates,
       `${getSimulation().currentDate}T12:00:00.000Z`,
     );
-    savePortfolio(portfolio);
+    savePortfolio(scenario);
 
+    creatingNewScenario = false;
     setActiveTab('portfolio');
     await refreshAllViews();
   } catch (error) {
@@ -418,9 +474,8 @@ function handleExport() {
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
-    const stamp = todayIso();
     anchor.href = url;
-    anchor.download = `fxsim-${stamp}.json`;
+    anchor.download = exportFilename(payload);
     anchor.click();
     URL.revokeObjectURL(url);
   } catch (error) {
@@ -437,9 +492,10 @@ async function handleImport(event, { fromSetup = false } = {}) {
     const text = await file.text();
     const payload = JSON.parse(text);
 
-    if (getPortfolio()) {
+    if (hasScenarios() && getPortfolio()) {
+      const scenarioName = getPortfolio().name;
       const confirmed = window.confirm(
-        'Replace your current portfolio with the imported backup?',
+        `Replace the active scenario "${scenarioName}" with this imported backup?`,
       );
       if (!confirmed) return;
     }
@@ -454,6 +510,7 @@ async function handleImport(event, { fromSetup = false } = {}) {
       setupStartDate.value = '2010-01-05';
     }
 
+    creatingNewScenario = false;
     setActiveTab('portfolio');
     await refreshAllViews();
   } catch (error) {
@@ -461,20 +518,56 @@ async function handleImport(event, { fromSetup = false } = {}) {
   }
 }
 
-function handleReset() {
+async function handleScenarioChange() {
+  const value = scenarioSelect.value;
+
+  if (value === ADD_SCENARIO_VALUE) {
+    showSetupView({ forNewScenario: true });
+    if (getActiveScenarioId()) {
+      scenarioSelect.value = getActiveScenarioId();
+    }
+    return;
+  }
+
+  try {
+    stopPlayback();
+    resetChartState();
+    switchScenario(value);
+    applyRateContext(getSimulation());
+    await refreshAllViews();
+  } catch (error) {
+    alert(error.message);
+    renderScenarioSelect();
+  }
+}
+
+async function handleDeleteScenario() {
+  const scenario = getPortfolio();
+  if (!scenario) return;
+
   const confirmed = window.confirm(
-    'Reset your portfolio? This clears all data from this browser. Export a backup first if you want to keep it.',
+    `Delete scenario "${scenario.name}"? This cannot be undone. Export first if you want a backup.`,
   );
   if (!confirmed) return;
 
   stopPlayback();
   resetChartState();
-  clearPortfolio();
-  setupForm.reset();
-  setupForm.startingHkd.value = DEFAULT_STARTING_HKD;
-  setupStartDate.value = '2010-01-05';
-  showAppChrome(false);
-  showView('setup');
+
+  const result = deleteScenario(scenario.id);
+
+  if (result.remaining === 0) {
+    showSetupView({ forNewScenario: true });
+    return;
+  }
+
+  applyRateContext(getSimulation());
+  await refreshAllViews();
+}
+
+function handleCancelSetup() {
+  if (!hasScenarios()) return;
+  creatingNewScenario = false;
+  refreshAllViews();
 }
 
 async function handlePlayPause() {
@@ -551,7 +644,9 @@ function init() {
   document.getElementById('trade-from').addEventListener('change', previewTrade);
   document.getElementById('trade-to').addEventListener('change', previewTrade);
 
-  document.getElementById('btn-reset').addEventListener('click', handleReset);
+  document.getElementById('btn-delete-scenario').addEventListener('click', handleDeleteScenario);
+  document.getElementById('btn-cancel-setup').addEventListener('click', handleCancelSetup);
+  scenarioSelect.addEventListener('change', handleScenarioChange);
   document.getElementById('btn-export').addEventListener('click', handleExport);
   document.getElementById('btn-play').addEventListener('click', handlePlayPause);
   document.getElementById('btn-step').addEventListener('click', handleStep);
@@ -567,13 +662,12 @@ function init() {
   importFile.addEventListener('change', handleImport);
   setupImportFile.addEventListener('change', (event) => handleImport(event, { fromSetup: true }));
 
-  if (getPortfolio()) {
+  if (hasScenarios()) {
     applyRateContext(getSimulation());
     setActiveTab('portfolio');
     refreshAllViews();
   } else {
-    showAppChrome(false);
-    showView('setup');
+    showSetupView({ forNewScenario: true });
   }
 }
 

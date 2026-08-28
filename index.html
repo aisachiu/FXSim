@@ -12,6 +12,13 @@
   <header class="site-header">
     <div class="container header-inner">
       <span class="logo">FX Sim</span>
+      <div class="header-tools hidden" id="header-tools">
+        <label class="scenario-select-label">
+          Scenario
+          <select id="scenario-select" aria-label="Select scenario"></select>
+        </label>
+        <button class="btn btn-ghost btn-sm" id="btn-delete-scenario" type="button">Delete</button>
+      </div>
       <nav class="tab-nav hidden" id="tab-nav">
         <button class="tab active" data-tab="portfolio" type="button">Portfolio</button>
         <button class="tab" data-tab="rates" type="button">Exchange Rates</button>
@@ -59,6 +66,10 @@
         </p>
         <form id="setup-form">
           <label>
+            Scenario name
+            <input type="text" name="scenarioName" id="setup-scenario-name" maxlength="80" placeholder="e.g. 2010 USD hedge" required>
+          </label>
+          <label>
             Starting balance (HKD)
             <input type="number" name="startingHkd" min="1000" step="0.01" value="10000" required>
           </label>
@@ -86,7 +97,7 @@
             Import JSON
             <input type="file" id="import-file" accept="application/json,.json" hidden>
           </label>
-          <button class="btn btn-ghost btn-sm" id="btn-reset" type="button">Reset</button>
+          <button class="btn btn-ghost btn-sm hidden" id="btn-cancel-setup" type="button">Cancel</button>
         </div>
       </div>
 

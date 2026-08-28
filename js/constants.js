@@ -1,9 +1,12 @@
 export const STORAGE_KEYS = {
+  scenarios: 'fxsim:scenarios',
   portfolio: 'fxsim:portfolio',
 };
 
+export const ADD_SCENARIO_VALUE = '__new__';
+
 export const EXPORT_FORMAT = 'fxsim-export';
-export const EXPORT_VERSION = 3;
+export const EXPORT_VERSION = 4;
 
 export const CURRENCIES = [
   'HKD',
@@ -60,4 +63,12 @@ export function clampDate(isoDate, min, max) {
   if (isoDate < min) return min;
   if (isoDate > max) return max;
   return isoDate;
+}
+
+export function slugify(value) {
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'scenario';
 }

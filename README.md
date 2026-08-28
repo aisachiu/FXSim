@@ -1,18 +1,20 @@
 # FX Sim — Currency Trading Simulator
 
-A thin client-side web app for paper currency trading. Start with Hong Kong dollars (HKD), step through historical exchange rates or trade at live rates, and track how your simulated wealth changes over time.
-
-All data is stored **locally in your browser**. Export and import a JSON backup file to move your portfolio between devices.
+A thin client-side web app for paper currency trading with historical replay, multiple saved scenarios, and local browser storage.
 
 ## Features
 
-- Start with a configurable HKD balance and simulation start date (from 1981)
-- **Historical mode** — step forward one trading day, auto-play with speed control, or jump to any date
-- **Exchange Rates tab** — interactive charts with adjustable time range; click a point to jump the simulation
-- Trade between 10 major currencies using rates from [Frankfurter](https://frankfurter.dev)
-- Dashboard with total wealth (HKD), profit/loss, holdings, trade history, and wealth chart
-- Export / import JSON backup files
-- No accounts, passwords, or backend
+- **Multiple scenarios** — save, switch, and delete independent portfolios locally
+- **Historical mode** — step forward, auto-play with speed control, jump to any date
+- **Exchange Rates tab** — interactive charts; click a date to jump the simulation
+- Trade 10 major currencies using rates from [Frankfurter](https://frankfurter.dev)
+- Export / import JSON for the **active scenario only**
+
+## Scenarios
+
+Use the **Scenario** dropdown in the header to switch between saved sets. Choose **+ Add new scenario** to create another portfolio with its own trades and simulation date. **Delete** removes only the active scenario.
+
+Existing single-portfolio data is migrated automatically to **Scenario 1** on first load.
 
 ## Run locally
 
@@ -20,20 +22,21 @@ All data is stored **locally in your browser**. Export and import a JSON backup 
 python3 -m http.server 8080
 ```
 
-Then open http://localhost:8080
+Live: https://aisachiu.github.io/FXSim/
 
-## Deploy
+## Export format (v4)
 
-Pushes to `main` deploy automatically to GitHub Pages via Actions.
+```json
+{
+  "format": "fxsim-export",
+  "version": 4,
+  "scenarioName": "2010 USD hedge",
+  "exportedAt": "2026-08-28T10:00:00.000Z",
+  "portfolio": { ... }
+}
+```
 
-Live URL: https://aisachiu.github.io/FXSim/
-
-## Historical simulation
-
-- Step forward skips weekends and holidays (business days only)
-- Speed dial: 1× to 50× (days per second while playing)
-- EUR is unavailable before 1999-01-04
-- Switch to **Live (today)** for current rates
+Import replaces the active scenario. v3 exports remain compatible.
 
 ## Disclaimer
 
